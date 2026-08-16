@@ -5,6 +5,7 @@ noise_injection.py or fitness_stats.py's input log). No further noise
 injection needed, this just subsamples what's already in the noise ijected xes traces.
 """
 
+import argparse
 import os
 import csv
 import random
@@ -13,25 +14,48 @@ from pm4py.objects.log.obj import EventLog
 from pm4py.objects.log.importer.xes import importer as xes_importer
 from pm4py.objects.log.exporter.xes import exporter as xes_exporter
 
-# ── Config ──────────────────────────────────────────────────────────────────
-XES_IN_PATH  = r"C:\Users\LENONVO\Downloads\junnea_data_sm2\noise_injection\balanced_noise_injected.xes"
-OUT_DIR      = r"C:\Users\LENONVO\Downloads\junnea_data_sm2\noise_injection\subset_of_500"
-XES_OUT_PATH  = os.path.join(OUT_DIR, "final_balanced_dataset.xes")
-STATS_CSV_OUT = os.path.join(OUT_DIR, "final_balanced_dataset_stats.csv")
 
-# Exact trace counts to pull from each bin. Adjust freely , total dataset
-# size is just the sum of these three.
-DESIRED_COUNTS = {
-    "bin_1": 300,   # fitness <= 0.70          (take ALL available if this equals the max)
-    "bin_2": 100,   # 0.70 <= fitness <= 0.80
-    "bin_3": 100,    # 0.80 <= fitness <= 1.00
-    # "bin_1": 3709,   # fitness <= 0.70          (take ALL available if this equals the max)
-    # "bin_2": 1500,   # 0.70 <= fitness <= 0.80
-    # "bin_3": 500,    # 0.80 <= fitness <= 1.00
-}
-
-RANDOM_SEED = 42
-random.seed(RANDOM_SEED)
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Build a final balanced dataset by subsampling from a fitness-annotated XES log"
+    )
+    parser.add_argument(
+        "--xes-input",
+        type=str,
+        required=True,
+        help="Path to input XES event log file (must have 'trace_fitness' attribute)"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        required=True,
+        help="Directory where output files will be saved"
+    )
+    parser.add_argument(
+        "--bin1-count",
+        type=int,
+        default=300,
+        help="Number of traces to sample from bin_1 (fitness <= 0.70). Default: 300"
+    )
+    parser.add_argument(
+        "--bin2-count",
+        type=int,
+        default=100,
+        help="Number of traces to sample from bin_2 (0.70 < fitness <= 0.80). Default: 100"
+    )
+    parser.add_argument(
+        "--bin3-count",
+        type=int,
+        default=100,
+        help="Number of traces to sample from bin_3 (fitness > 0.80). Default: 100"
+    )
+    parser.add_argument(
+        "--random-seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility. Default: 42"
+    )
+    return parser.parse_args()
 
 
 def classify_bin(fitness):
@@ -44,6 +68,21 @@ def classify_bin(fitness):
 
 
 def main():
+    args = parse_arguments()
+    
+    XES_IN_PATH = args.xes_input
+    OUT_DIR = args.output_dir
+    XES_OUT_PATH = os.path.join(OUT_DIR, "final_balanced_dataset.xes")
+    STATS_CSV_OUT = os.path.join(OUT_DIR, "final_balanced_dataset_stats.csv")
+    
+    DESIRED_COUNTS = {
+        "bin_1": args.bin1_count,
+        "bin_2": args.bin2_count,
+        "bin_3": args.bin3_count,
+    }
+    
+    random.seed(args.random_seed)
+
     os.makedirs(OUT_DIR, exist_ok=True)
 
     print(f"[XES] Loading log from {XES_IN_PATH} ...")

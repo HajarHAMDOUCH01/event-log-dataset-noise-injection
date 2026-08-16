@@ -14,12 +14,29 @@ bin_1+bin_2+bin_3 can therefore sum to slightly more than the total trace
 count. This is intentional, not a bug.
 """
 
+import argparse
 import csv
 import pm4py
 from pm4py.objects.log.importer.xes import importer as xes_importer
 
-XES_PATH = r"C:\Users\LENONVO\Downloads\BPIC_2019\event_logs_BPIC_2019\BPIC_2019.xes\sm2_tbr_fitness_metric\noise_injection\balanced_noise_injected.xes"
-STATS_CSV_OUT = r"C:\Users\LENONVO\Downloads\BPIC_2019\event_logs_BPIC_2019\BPIC_2019.xes\sm2_tbr_fitness_metric\noise_injection\fitness_stats.csv"
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Compute and save fitness-bin distribution of a XES log"
+    )
+    parser.add_argument(
+        "--xes-input",
+        type=str,
+        required=True,
+        help="Path to input XES event log file (must have 'trace_fitness' attribute)"
+    )
+    parser.add_argument(
+        "--csv-output",
+        type=str,
+        required=True,
+        help="Path to output CSV file with fitness statistics"
+    )
+    return parser.parse_args()
 
 
 def compute_fitness_bins(log):
@@ -56,6 +73,11 @@ def compute_fitness_bins(log):
 
 
 def main():
+    args = parse_arguments()
+    
+    XES_PATH = args.xes_input
+    STATS_CSV_OUT = args.csv_output
+
     print(f"[XES] Loading log from {XES_PATH} ...")
     log = xes_importer.apply(XES_PATH)
     print(f"[XES] Log loaded , {len(log)} traces")

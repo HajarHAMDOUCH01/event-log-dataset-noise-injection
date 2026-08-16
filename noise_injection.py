@@ -22,6 +22,7 @@ Output:
     - A CSV with the final fitness-bin distribution stats.
 """
 
+import argparse
 import os
 import copy
 import random
@@ -34,32 +35,72 @@ from pm4py.objects.log.exporter.xes import exporter as xes_exporter
 from pm4py.objects.petri_net.importer import importer as pnml_importer
 from pm4py.algo.conformance.tokenreplay import algorithm as token_replay
 
-# ── Config ──────────────────────────────────────────────────────────────────
-# XES_IN_PATH   = r"C:\Users\LENONVO\Downloads\BPIC_2019\event_logs_BPIC_2019\BPIC_2019.xes\sm2_tbr_fitness_metric\tmpkt56wi_6xes_with_conf_metric_sm2.xes"    
-# PNML_PATH     = r"C:\Users\LENONVO\Downloads\BPIC_2019\split_miner_models\split_miner_sm2_eps0.1_eta0.4.pnml"
-# OUT_DIR       = r"C:\Users\LENONVO\Downloads\BPIC_2019\event_logs_BPIC_2019\BPIC_2019.xes\sm2_tbr_fitness_metric\noise_injection"
-# XES_OUT_PATH  = os.path.join(OUT_DIR, "balanced_noise_injected.xes")
-# STATS_CSV_OUT = os.path.join(OUT_DIR, "balanced_noise_injected_stats.csv")
 
-
-XES_IN_PATH   = r"C:\Users\LENONVO\Downloads\junnea_data_sm2\xes_conf_metric_sm2_junneau_training_set.xes"
-PNML_PATH     = r"C:\Users\LENONVO\Downloads\junnea_data_sm2\model_sm2_junneau_data.pnml"
-OUT_DIR       = r"C:\Users\LENONVO\Downloads\junnea_data_sm2\noise_injection"
-XES_OUT_PATH  = os.path.join(OUT_DIR, "balanced_noise_injected.xes")
-STATS_CSV_OUT = os.path.join(OUT_DIR, "balanced_noise_injected_stats.csv")
-
-TARGET_PROPORTIONS = {
-    "bin_1": 0.70,   # fitness <= 0.70
-    "bin_2": 0.20,   # 0.70 <= fitness <= 0.80
-    "bin_3": 0.10,   # 0.80 <= fitness <= 1.00
-}
-
-NOISE_LEVELS = [0.10, 0.20, 0.35, 0.50, 0.70, 0.90, 1.00]  # ladder of noise % to try, per trace
-EXTRA_RETRIES_AT_MAX_NOISE = 6   # extra random restarts at the top of the ladder if still unmatched
-MAX_ATTEMPTS_PER_TRACE = len(NOISE_LEVELS) + EXTRA_RETRIES_AT_MAX_NOISE
-RANDOM_SEED = 42
-
-random.seed(RANDOM_SEED)
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Inject noise into XES event log to rebalance fitness distribution"
+    )
+    parser.add_argument(
+        "--xes-input",
+        type=str,
+        required=True,
+        help="Path to input XES event log file"
+    )
+    parser.add_argument(
+        "--pnml-model",
+        type=str,
+        required=True,
+        help="Path to input PNML Petri net model file"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        required=True,
+        help="Directory where output XES and CSV files will be saved"
+    )
+    parser.add_argument(
+        "--target-bin1",
+        type=float,
+        default=0.70,
+        help="Target proportion for bin_1 (fitness <= 0.70). Default: 0.70"
+    )
+    parser.add_argument(
+        "--target-bin2",
+        type=float,
+        default=0.20,
+        help="Target proportion for bin_2 (0.70 < fitness <= 0.80). Default: 0.20"
+    )
+    parser.add_argument(
+        "--target-bin3",
+        type=float,
+        default=0.10,
+        help="Target proportion for bin_3 (fitness > 0.80). Default: 0.10"
+    )
+    parser.add_argument(
+        "--sample-size",
+        type=int,
+        default=50000,
+        help="Maximum number of traces to process. If input has more, randomly subsample. Default: 50000"
+    )
+    parser.add_argument(
+        "--noise-levels",
+        type=str,
+        default="0.10,0.20,0.35,0.50,0.70,0.90,1.00",
+        help="Comma-separated noise percentages to try (ladder). Default: 0.10,0.20,0.35,0.50,0.70,0.90,1.00"
+    )
+    parser.add_argument(
+        "--extra-retries",
+        type=int,
+        default=6,
+        help="Extra random restarts at maximum noise level if trace unmatched. Default: 6"
+    )
+    parser.add_argument(
+        "--random-seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility. Default: 42"
+    )
+    return parser.parse_args()
 
 
 # ── Bin helpers ───────────────────────────────────────────────────────────────
@@ -155,6 +196,27 @@ def replay_fitness_single(trace, net, im, fm):
 
 # ── Main pipeline ──────────────────────────────────────────────────────────────
 def main():
+    args = parse_arguments()
+    
+    XES_IN_PATH = args.xes_input
+    PNML_PATH = args.pnml_model
+    OUT_DIR = args.output_dir
+    XES_OUT_PATH = os.path.join(OUT_DIR, "balanced_noise_injected.xes")
+    STATS_CSV_OUT = os.path.join(OUT_DIR, "balanced_noise_injected_stats.csv")
+    
+    TARGET_PROPORTIONS = {
+        "bin_1": args.target_bin1,
+        "bin_2": args.target_bin2,
+        "bin_3": args.target_bin3,
+    }
+    
+    NOISE_LEVELS = [float(x.strip()) for x in args.noise_levels.split(",")]
+    EXTRA_RETRIES_AT_MAX_NOISE = args.extra_retries
+    MAX_ATTEMPTS_PER_TRACE = len(NOISE_LEVELS) + EXTRA_RETRIES_AT_MAX_NOISE
+    SAMPLE_SIZE = args.sample_size
+    RANDOM_SEED = args.random_seed
+    
+    random.seed(RANDOM_SEED)
     os.makedirs(OUT_DIR, exist_ok=True)
 
     print(f"[XES] Loading log from {XES_IN_PATH} ...")
@@ -163,8 +225,6 @@ def main():
     print(f"[XES] Log loaded - {n_full} traces")
 
     # ── Randomly subsample down to a target size ──────────────────────────────
-    SAMPLE_SIZE = 50000
-
     if n_full > SAMPLE_SIZE:
         sampled_traces = random.sample(list(log), SAMPLE_SIZE)
         log = EventLog(sampled_traces)

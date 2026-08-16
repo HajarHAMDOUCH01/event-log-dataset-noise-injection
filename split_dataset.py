@@ -12,6 +12,7 @@ Strategy:
 Ratios: 70% train / 15% val / 15% test (of the total dataset size).
 """
 
+import argparse
 import os
 import csv
 import random
@@ -20,20 +21,55 @@ from pm4py.objects.log.obj import EventLog
 from pm4py.objects.log.importer.xes import importer as xes_importer
 from pm4py.objects.log.exporter.xes import exporter as xes_exporter
 
-# ── Config ──────────────────────────────────────────────────────────────────
-XES_IN_PATH = r"C:\Users\LENONVO\Downloads\junnea_data_sm2\noise_injection\subset_of_500\final_balanced_dataset.xes"
-OUT_DIR     = r"C:\Users\LENONVO\Downloads\junnea_data_sm2\noise_injection\subset_of_500\splits"
 
-TRAIN_FRAC = 0.70
-VAL_FRAC   = 0.15
-TEST_FRAC  = 0.15   
-
-# Optional: force a manual fitness cutoff for test instead of the auto rank-based
-# 15% cutoff (e.g. 0.6). Leave as None to use the automatic rank-based split.
-MANUAL_TEST_FITNESS_THRESHOLD = None   # e.g. 0.60
-
-RANDOM_SEED = 42
-random.seed(RANDOM_SEED)
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Split balanced dataset into train/val/test sets with stratification"
+    )
+    parser.add_argument(
+        "--xes-input",
+        type=str,
+        required=True,
+        help="Path to input XES event log file (balanced dataset with 'trace_fitness' attribute)"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        required=True,
+        help="Directory where train.xes, val.xes, test.xes, and split_stats.csv will be saved"
+    )
+    parser.add_argument(
+        "--train-ratio",
+        type=float,
+        default=0.70,
+        help="Proportion of traces for training set. Default: 0.70"
+    )
+    parser.add_argument(
+        "--val-ratio",
+        type=float,
+        default=0.15,
+        help="Proportion of traces for validation set. Default: 0.15"
+    )
+    parser.add_argument(
+        "--test-ratio",
+        type=float,
+        default=0.15,
+        help="Proportion of traces for test set. Default: 0.15"
+    )
+    parser.add_argument(
+        "--test-fitness-threshold",
+        type=float,
+        default=None,
+        help="Optional manual fitness threshold for test set (e.g., 0.60). "
+             "If provided, overrides the automatic rank-based split. Default: None (auto)"
+    )
+    parser.add_argument(
+        "--random-seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility. Default: 42"
+    )
+    return parser.parse_args()
 
 
 def classify_bin(fitness):
@@ -78,6 +114,18 @@ def to_event_log(traces_with_fitness):
 
 
 def main():
+    args = parse_arguments()
+    
+    XES_IN_PATH = args.xes_input
+    OUT_DIR = args.output_dir
+    TRAIN_FRAC = args.train_ratio
+    VAL_FRAC = args.val_ratio
+    TEST_FRAC = args.test_ratio
+    MANUAL_TEST_FITNESS_THRESHOLD = args.test_fitness_threshold
+    RANDOM_SEED = args.random_seed
+    
+    random.seed(RANDOM_SEED)
+
     os.makedirs(OUT_DIR, exist_ok=True)
 
     print(f"[XES] Loading log from {XES_IN_PATH} ...")
