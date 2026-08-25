@@ -1,18 +1,18 @@
 # ══════════════════════════════════════════════════════════════════════════════
-# ALIGNMENT-BASED FITNESS ON NEW XES DATASET (pm4py alignments)
+# TOKEN REPLAY ON XES EVENT LOG
 # ══════════════════════════════════════════════════════════════════════════════
 
 import argparse
 import pm4py
 from pm4py.objects.log.importer.xes import importer as xes_importer
 from pm4py.objects.petri_net.importer import importer as pnml_importer
-from pm4py.algo.conformance.alignments.petri_net import algorithm as alignments
+from pm4py.algo.conformance.tokenreplay import algorithm as token_replay
 from pm4py.objects.log.exporter.xes import exporter as xes_exporter
 
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
-        description="Run alignment-based conformance checking on XES event log against a Petri net model"
+        description="Run token-based replay on XES event log against a Petri net model"
     )
     parser.add_argument(
         "--xes-input",
@@ -50,8 +50,6 @@ def main():
     # ── 2. Load PNML model ─────────────────────────────────────────────────────────
     print(f"\n[PNML] Loading model from {PNML_PATH} ...")
     net, im, fm = pnml_importer.apply(PNML_PATH)
-    sink_place = next(p for p in net.places if p.name == "sink")
-    fm = pm4py.generate_marking(net, sink_place)
     print(f"[PNML] Net loaded , places: {len(net.places)}, transitions: {len(net.transitions)}, arcs: {len(net.arcs)}")
 
     print("\n[MARKING] Initial marking:")
@@ -67,13 +65,12 @@ def main():
     if not fm:
         raise ValueError("Final marking is empty - the PNML may be missing the <finalMarking> tag.")
 
-    # ── 3. Run alignment-based conformance ─────────────────────────────────────────
-    print("\n── Alignment-Based Conformance ──────────────────────────────────────")
-    print(f"[ALIGN] Running alignments on {len(log)} traces...")
-    aligned = alignments.apply(log, net, im, fm)
-    print(f"[ALIGN] Done , {len(aligned)} results returned")
-    print(f"[ALIGN] Sample result keys : {list(aligned[0].keys())}")
-    print(f"[ALIGN] Sample result [0]  : fitness={aligned[0]['fitness']}, cost={aligned[0]['cost']}")
+    # ── 3. Run token replay ────────────────────────────────────────────────────────
+    print("\n── Token Replay ──────────────────────────────────────────────────────")
+    print(f"[REPLAY] Running token replay on {len(log)} traces...")
+    replayed = token_replay.apply(log, net, im, fm)
+    print(f"[REPLAY] Done , {len(replayed)} results returned")
+    print(f"[REPLAY] Sample result keys : {list(replayed[0].keys())}")
 
     # ── 4. Build fitness map keyed by case id ──────────────────────────────────────
     case_ids = [trace.attributes["concept:name"] for trace in log]
@@ -81,10 +78,10 @@ def main():
 
     fitness_map = {
         case_id: {
-            "is_fit":        bool(result["fitness"] == 1.0),
-            "trace_fitness": result["fitness"],
+            "is_fit":        result["trace_is_fit"],
+            "trace_fitness": result["trace_fitness"],
         }
-        for case_id, result in zip(case_ids, aligned)
+        for case_id, result in zip(case_ids, replayed)
     }
     print(f"[FITNESS MAP] Built map for {len(fitness_map)} cases")
 
@@ -106,9 +103,9 @@ def main():
     print(f"[PROMOTE] Sample trace attributes after promotion: {dict(log[0].attributes)}")
 
     # ── 6. Summary stats ───────────────────────────────────────────────────────────
-    fit_count      = sum(1 for r in aligned if r["fitness"] == 1.0)
-    global_fitness = sum(r["fitness"] for r in aligned) / len(aligned)
-    print(f"\nFit traces     : {fit_count} / {len(aligned)} ({100 * fit_count / len(aligned):.1f}%)")
+    fit_count      = sum(1 for t in replayed if t["trace_is_fit"])
+    global_fitness = sum(t["trace_fitness"] for t in replayed) / len(replayed)
+    print(f"\nFit traces     : {fit_count} / {len(replayed)} ({100 * fit_count / len(replayed):.1f}%)")
     print(f"Global fitness : {global_fitness:.4f}")
 
     # ── 7. Export enriched XES ──────────────────────────────────────────────────────

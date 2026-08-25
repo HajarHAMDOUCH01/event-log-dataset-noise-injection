@@ -22,13 +22,15 @@ def parse_arguments():
     parser.add_argument(
         "--xes-input",
         type=str,
-        required=True,
+        default=r"C:\Users\LENONVO\Downloads\BPIC_2012\IM_0.2\noise_injection\balanced_noise_injected.xes",
+        # required=True,
         help="Path to input XES event log file (must have 'trace_fitness' attribute)"
     )
     parser.add_argument(
         "--output-dir",
         type=str,
-        required=True,
+        default=r"C:\Users\LENONVO\Downloads\BPIC_2012\IM_0.2\noise_injection\subset_of_500_traces",
+        # required=True,
         help="Directory where output files will be saved"
     )
     parser.add_argument(

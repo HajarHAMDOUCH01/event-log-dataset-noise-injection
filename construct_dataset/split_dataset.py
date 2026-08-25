@@ -29,13 +29,15 @@ def parse_arguments():
     parser.add_argument(
         "--xes-input",
         type=str,
-        required=True,
+        default=r"C:\Users\LENONVO\Downloads\BPIC_2012\IM_0.2\noise_injection\subset_of_500_traces\final_balanced_dataset.xes",
+        # required=True,
         help="Path to input XES event log file (balanced dataset with 'trace_fitness' attribute)"
     )
     parser.add_argument(
         "--output-dir",
         type=str,
-        required=True,
+        default=r"C:\Users\LENONVO\Downloads\BPIC_2012\IM_0.2\noise_injection\subset_of_500_traces\splits",
+        # required=True,
         help="Directory where train.xes, val.xes, test.xes, and split_stats.csv will be saved"
     )
     parser.add_argument(
