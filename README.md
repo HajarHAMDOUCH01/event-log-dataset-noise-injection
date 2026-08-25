@@ -1,12 +1,90 @@
-# XES event log noise injection and dataset split Scripts - Command-Line Interface
+
+# XES Event Log Noise Injection & Dataset Splitting Toolkit
+
+Command-line tools for **process-mining event logs** (XES format) that:
+
+1. Compute **trace fitness** (token-based replay or alignments) against a Petri-net model (PNML).
+2. **Inject controlled control-flow noise** to rebalance the fitness distribution.
+3. Sample a **balanced dataset** and split it into train / validation / test sets (with the hardest traces reserved for the test set).
+
+This is especially useful when the original log is heavily skewed toward high-fitness traces and you need more low-fitness (noisy / non-conforming) examples for downstream tasks (e.g. predictive process monitoring, conformance learning, robustness evaluation, etc.).
 
 ---
 
-##  Quick Start
+## Motivation & Result
+
+Real-life event logs often contain almost exclusively high-fitness traces.  
+After noise injection the distribution becomes much more useful for training/evaluation:
+
+![Trace Fitness Distribution Before and After Noise Injection](fitness_distri.png)
+
+- **Before**: ~100 % high-fitness (> 0.80)
+- **After** (example run): ~65.8 % low (≤ 0.70), ~23.9 % medium (0.70–0.80), ~10.3 % high (> 0.80)
+
+Target proportions (configurable):
+- **bin_1** (low): ≤ 0.70 → default 70 %
+- **bin_2** (medium): 0.70 < fitness ≤ 0.80 → default 20 %
+- **bin_3** (high): > 0.80 → default 10 %
 
 ---
 
-## Scripts and Their Usage
+## Requirements
+
+- Python ≥ 3.8
+- [pm4py](https://pm4py.fit.fraunhofer.de/) (and its dependencies)
+
+```bash
+pip install pm4py
+```
+
+Optional (for Petri-net visualization): Graphviz must be installed on the system.
+
+---
+
+## Quick Start
+
+```bash
+# 1. Annotate the original log with token-based-replay fitness
+python tbr_xes.py \
+  --xes-input  ./data/original_log.xes \
+  --pnml-model ./models/model.pnml \
+  --xes-output ./intermediate/log_with_fitness.xes
+
+# 2. Inject noise to reach the desired fitness distribution
+python noise_injection.py \
+  --xes-input  ./intermediate/log_with_fitness.xes \
+  --pnml-model ./models/model.pnml \
+  --output-dir ./intermediate/noise_injection
+
+# 3. (Optional) Create a smaller balanced subset
+python sample_dataset_balanced.py \
+  --xes-input  ./intermediate/noise_injection/balanced_noise_injected.xes \
+  --output-dir ./processed/balanced \
+  --bin1-count 300 --bin2-count 100 --bin3-count 100
+
+# 4. Split into train / val / test (test set = hardest traces)
+python split_dataset.py \
+  --xes-input  ./processed/balanced/final_balanced_dataset.xes \
+  --output-dir ./processed/splits
+```
+
+See the full workflow example further below.
+
+---
+
+## Scripts Overview
+
+| Script | Purpose |
+|--------|---------|
+| `tbr_xes.py` | Token-based replay → adds `trace_fitness` & `is_fit` attributes |
+| `align_based_fitness_xes.py` | Alignment-based fitness (more precise, slower) |
+| `fitness_stats.py` | Compute & export fitness-bin statistics (CSV) |
+| `noise_injection.py` | Controlled noise injection + rebalancing |
+| `sample_dataset_balanced.py` | Subsample fixed counts per fitness bin |
+| `split_dataset.py` | Stratified train/val/test split (hardest traces → test) |
+| `viz_petri_net.py` | Visualize a PNML model as PNG |
+
+---
 
 ### 1. Token-Based Replay (`tbr_xes.py`)
 
@@ -20,14 +98,6 @@ python tbr_xes.py \
   --xes-output <output.xes>
 ```
 
-**Example:**
-```bash
-python tbr_xes.py \
-  --xes-input ./data/input_log.xes \
-  --pnml-model ./models/my_model.pnml \
-  --xes-output ./output/log_with_tbr_fitness.xes
-```
-
 **Arguments:**
 - `--xes-input` (required): Path to input XES event log file
 - `--pnml-model` (required): Path to input PNML Petri net model file
@@ -37,7 +107,7 @@ python tbr_xes.py \
 
 ### 2. Alignment-Based Conformance (`align_based_fitness_xes.py`)
 
-**Purpose:** Run alignment-based conformance checking on an XES log against a Petri net model.
+**Purpose:** Run alignment-based conformance checking (more accurate but computationally heavier).
 
 **Usage:**
 ```bash
@@ -47,18 +117,7 @@ python align_based_fitness_xes.py \
   --xes-output <output.xes>
 ```
 
-**Example:**
-```bash
-python align_based_fitness_xes.py \
-  --xes-input ./data/input_log.xes \
-  --pnml-model ./models/my_model.pnml \
-  --xes-output ./output/log_with_alignment_fitness.xes
-```
-
-**Arguments:**
-- `--xes-input` (required): Path to input XES event log file
-- `--pnml-model` (required): Path to input PNML Petri net model file
-- `--xes-output` (required): Path to output XES file with alignment-based fitness metrics
+**Arguments:** same as `tbr_xes.py`.
 
 ---
 
@@ -73,216 +132,140 @@ python fitness_stats.py \
   --csv-output <output.csv>
 ```
 
-**Example:**
-```bash
-python fitness_stats.py \
-  --xes-input ./data/annotated_log.xes \
-  --csv-output ./output/fitness_distribution.csv
-```
-
-**Arguments:**
-- `--xes-input` (required): Path to input XES log (must have `trace_fitness` attribute)
-- `--csv-output` (required): Path to output CSV file with fitness statistics
-
 **Fitness Bins:**
 - `bin_1`: fitness ≤ 0.70
-- `bin_2`: 0.70 ≤ fitness ≤ 0.80
-- `bin_3`: 0.80 ≤ fitness ≤ 1.00
+- `bin_2`: 0.70 < fitness ≤ 0.80
+- `bin_3`: fitness > 0.80
 
 ---
 
 ### 4. Sample Balanced Dataset (`sample_dataset_balanced.py`)
 
-**Purpose:** Build a final balanced dataset by subsampling traces from each fitness bin.
+**Purpose:** Build a final balanced dataset by subsampling a fixed number of traces from each fitness bin.
 
 **Usage:**
 ```bash
 python sample_dataset_balanced.py \
   --xes-input <input.xes> \
-  --output-dir <output_directory>
+  --output-dir <output_directory> \
+  [--bin1-count 300] [--bin2-count 100] [--bin3-count 100] \
+  [--random-seed 42]
 ```
-
-**Example:**
-```bash
-python sample_dataset_balanced.py \
-  --xes-input ./data/balanced_noise_injected.xes \
-  --output-dir ./output/balanced_dataset \
-  --bin1-count 300 \
-  --bin2-count 100 \
-  --bin3-count 100
-```
-
-**Arguments:**
-- `--xes-input` (required): Path to input XES log with `trace_fitness` attribute
-- `--output-dir` (required): Directory where output files will be saved
-- `--bin1-count` (optional, default: 300): Number of traces to sample from bin_1 (≤0.70)
-- `--bin2-count` (optional, default: 100): Number of traces to sample from bin_2 (0.70-0.80)
-- `--bin3-count` (optional, default: 100): Number of traces to sample from bin_3 (0.80-1.00)
-- `--random-seed` (optional, default: 42): Random seed for reproducibility
 
 **Output:**
-- `final_balanced_dataset.xes`: The balanced XES log
-- `final_balanced_dataset_stats.csv`: Statistics on the balanced dataset
+- `final_balanced_dataset.xes`
+- `final_balanced_dataset_stats.csv`
 
 ---
 
 ### 5. Split into Train/Val/Test (`split_dataset.py`)
 
-**Purpose:** Split a balanced dataset into train/val/test sets with stratification.
+**Purpose:** Split a balanced dataset into train / validation / test sets.
+
+**Strategy:**
+- Test set contains the **hardest traces** (lowest fitness).
+- Train and validation sets are stratified to preserve the fitness-bin proportions.
 
 **Usage:**
 ```bash
 python split_dataset.py \
   --xes-input <input.xes> \
-  --output-dir <output_directory>
+  --output-dir <output_directory> \
+  [--train-ratio 0.70] [--val-ratio 0.15] [--test-ratio 0.15] \
+  [--test-fitness-threshold <float>] [--random-seed 42]
 ```
-
-**Example:**
-```bash
-python split_dataset.py \
-  --xes-input ./data/final_balanced_dataset.xes \
-  --output-dir ./output/splits
-```
-
-**Arguments:**
-- `--xes-input` (required): Path to input balanced XES log with `trace_fitness` attribute
-- `--output-dir` (required): Directory where output files will be saved
-- `--train-ratio` (optional, default: 0.70): Proportion for training set
-- `--val-ratio` (optional, default: 0.15): Proportion for validation set
-- `--test-ratio` (optional, default: 0.15): Proportion for test set
-- `--test-fitness-threshold` (optional, default: None): Manual fitness threshold for test set (overrides auto split)
-- `--random-seed` (optional, default: 42): Random seed for reproducibility
 
 **Output:**
-- `train.xes`: Training set (70% by default)
-- `val.xes`: Validation set (15% by default)
-- `test.xes`: Test set (15% by default) - lowest fitness traces
-- `split_stats.csv`: Detailed statistics per split
-
-**Strategy:**
-- Test set contains the **hardest traces** (lowest fitness)
-- Train/Val are stratified to preserve fitness bin proportions
+- `train.xes`, `val.xes`, `test.xes`
+- `split_stats.csv`
 
 ---
 
 ### 6. Noise Injection (`noise_injection.py`)
 
-**Purpose:** Inject noise into an XES log to rebalance fitness distribution.
+**Purpose:** Inject control-flow noise into an XES log so that the resulting fitness distribution matches the desired target proportions.
+
+**Noise operators (applied randomly):**
+- **Skip** – remove an event
+- **Insert** – add a random activity from the alphabet
+- **Rework** – duplicate an event
+- **Swap** – transpose two adjacent events
+
+Severity is controlled by a noise percentage \(p\):  
+number of edits ≈ \(\max(1, \mathrm{round}(p \times |\mathrm{trace}|))\).
+
+Every candidate is re-evaluated with **real token-based replay** before acceptance.  
+An iterative ladder of increasing noise levels + extra retries is used.
 
 **Usage:**
 ```bash
 python noise_injection.py \
   --xes-input <input.xes> \
   --pnml-model <model.pnml> \
-  --output-dir <output_directory>
+  --output-dir <output_directory> \
+  [--target-bin1 0.70] [--target-bin2 0.20] [--target-bin3 0.10] \
+  [--sample-size 50000] \
+  [--noise-levels 0.10,0.20,0.35,0.50,0.70,0.90,1.00] \
+  [--extra-retries 6] [--random-seed 42]
 ```
-
-**Example:**
-```bash
-python noise_injection.py \
-  --xes-input ./data/input_log.xes \
-  --pnml-model ./models/my_model.pnml \
-  --output-dir ./output/noise_injection
-```
-
-**Arguments:**
-- `--xes-input` (required): Path to input XES log with `trace_fitness` attribute
-- `--pnml-model` (required): Path to PNML Petri net model
-- `--output-dir` (required): Directory where output files will be saved
-- `--target-bin1` (optional, default: 0.70): Target proportion for bin_1 (≤0.70)
-- `--target-bin2` (optional, default: 0.20): Target proportion for bin_2 (0.70-0.80)
-- `--target-bin3` (optional, default: 0.10): Target proportion for bin_3 (0.80-1.00)
-- `--sample-size` (optional, default: 50000): Max traces to process (subsamples if needed)
-- `--noise-levels` (optional, default: 0.10,0.20,0.35,0.50,0.70,0.90,1.00): Comma-separated noise percentages
-- `--extra-retries` (optional, default: 6): Extra retries at max noise level
-- `--random-seed` (optional, default: 42): Random seed for reproducibility
 
 **Output:**
-- `balanced_noise_injected.xes`: Balanced XES log with noise injection
-- `balanced_noise_injected_stats.csv`: Final distribution statistics
-
-**Noise Operators:**
-- **Skip**: Remove an event
-- **Insert**: Add a random foreign event
-- **Rework**: Duplicate an event
-- **Swap**: Transpose two adjacent events
+- `balanced_noise_injected.xes`
+- `balanced_noise_injected_stats.csv`
 
 ---
 
 ### 7. Visualize Petri Net (`viz_petri_net.py`)
 
-**Purpose:** Visualize a Petri net from a PNML file and save as PNG.
+**Purpose:** Render a PNML Petri net as a PNG image.
 
-**Usage:**
 ```bash
 python viz_petri_net.py \
   --pnml-input <model.pnml> \
   --png-output <output.png>
 ```
 
-**Example:**
-```bash
-python viz_petri_net.py \
-  --pnml-input ./models/my_model.pnml \
-  --png-output ./output/model_visualization.png
-```
-
-**Arguments:**
-- `--pnml-input` (required): Path to input PNML Petri net model file
-- `--png-output` (required): Path to output PNG visualization file
-
-**Output:**
-- PNG file with visual representation of the Petri net
-
 ---
 
 ## Complete Workflow Example
 
-Here's a complete workflow from raw log to train/val/test splits:
-
 ```bash
-# Step 1: Run token-based replay to compute fitness
+# Step 1 – Compute fitness
 python tbr_xes.py \
   --xes-input ./raw_data/original_log.xes \
   --pnml-model ./models/split_miner_model.pnml \
   --xes-output ./intermediate/log_with_tbr_fitness.xes
 
-# Step 2: Compute initial fitness distribution
+# Step 2 – Inspect original distribution
 python fitness_stats.py \
   --xes-input ./intermediate/log_with_tbr_fitness.xes \
   --csv-output ./stats/initial_fitness_distribution.csv
 
-# Step 3: Inject noise to rebalance distribution
+# Step 3 – Noise injection (rebalance)
 python noise_injection.py \
   --xes-input ./intermediate/log_with_tbr_fitness.xes \
   --pnml-model ./models/split_miner_model.pnml \
   --output-dir ./intermediate/noise_injection \
-  --target-bin1 0.70 \
-  --target-bin2 0.20 \
-  --target-bin3 0.10
+  --target-bin1 0.70 --target-bin2 0.20 --target-bin3 0.10
 
-# Step 4: Verify new fitness distribution
+# Step 4 – Verify new distribution
 python fitness_stats.py \
   --xes-input ./intermediate/noise_injection/balanced_noise_injected.xes \
   --csv-output ./stats/balanced_fitness_distribution.csv
 
-# Step 5: Sample to create balanced dataset
+# Step 5 – Optional: create a fixed-size balanced subset
 python sample_dataset_balanced.py \
   --xes-input ./intermediate/noise_injection/balanced_noise_injected.xes \
   --output-dir ./processed_data/balanced \
-  --bin1-count 300 \
-  --bin2-count 100 \
-  --bin3-count 100
+  --bin1-count 300 --bin2-count 100 --bin3-count 100
 
-# Step 6: Split into train/val/test
+# Step 6 – Train / Val / Test split
 python split_dataset.py \
   --xes-input ./processed_data/balanced/final_balanced_dataset.xes \
   --output-dir ./processed_data/splits \
-  --train-ratio 0.70 \
-  --val-ratio 0.15 \
-  --test-ratio 0.15
+  --train-ratio 0.70 --val-ratio 0.15 --test-ratio 0.15
 
-# Step 7: Visualize the model (optional)
+# Step 7 – (Optional) Visualize the model
 python viz_petri_net.py \
   --pnml-input ./models/split_miner_model.pnml \
   --png-output ./visualizations/model.png
@@ -292,17 +275,8 @@ python viz_petri_net.py \
 
 ## Getting Help
 
-Every script has built-in help available:
+Every script supports `--help`:
 
-```bash
-python <script_name>.py --help
-```
-
-Example:
 ```bash
 python noise_injection.py --help
 ```
-
-This displays all available arguments and their descriptions.
-
----
